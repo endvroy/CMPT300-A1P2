@@ -34,7 +34,7 @@ void parse_line(char **commands[], size_t *n, char *line) {
     }
 }
 
-void parse_command(char **argv[], size_t *n, char *line) {
+size_t parse_command(char **argv[], size_t *n, char *line) {
     if (*argv == NULL) {
         *n = 10;
         *argv = malloc((*n) * sizeof(char *));
@@ -53,7 +53,7 @@ void parse_command(char **argv[], size_t *n, char *line) {
                     *argv = realloc(*argv, (*n) * sizeof(char *));
                 }
                 (*argv)[i + 1] = NULL; // append a NULL ptr
-                return;
+                return i;
             }
             if (i >= *n) {  // not enough size
                 *n = i + 2;
@@ -61,7 +61,7 @@ void parse_command(char **argv[], size_t *n, char *line) {
             }
             (*argv)[i] = arg;
             (*argv)[i + 1] = NULL; // append a NULL ptr
-            return;
+            return i + 1;
         }
         else {
             if (*arg == '\0' || isspace(*arg)) {
@@ -78,6 +78,8 @@ void parse_command(char **argv[], size_t *n, char *line) {
         }
     }
 }
+
+char ***parse_line_into_commands();
 
 int main(void) {
     char *line = NULL;
@@ -103,7 +105,8 @@ int main(void) {
 
     char **argv = NULL;
     size_t size1 = 0;
-    parse_command(&argv, &size1, commands[1]);
+    size_t argc = parse_command(&argv, &size1, commands[0]);
+    printf("%d\n", argc);
     i = 0;
     while (1) {
         if (argv[i] == NULL) {
@@ -114,5 +117,7 @@ int main(void) {
             i++;
         }
     }
+
+
     return 0;
 }
