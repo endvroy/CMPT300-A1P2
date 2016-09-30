@@ -3,7 +3,7 @@
 #include <string.h>
 #include <ctype.h>
 
-void parse_line(char **commands[], size_t *n, char *line) {
+size_t parse_line(char **commands[], size_t *n, char *line) {
     if (*commands == NULL) {
         *n = 10;
         *commands = malloc((*n) * sizeof(char *));
@@ -21,7 +21,7 @@ void parse_line(char **commands[], size_t *n, char *line) {
             }
             (*commands)[i] = command;
             (*commands)[i + 1] = NULL; // append a NULL ptr
-            return;
+            return i;
         }
         else {
             if (i >= *n) {  // not enough size
@@ -34,7 +34,7 @@ void parse_line(char **commands[], size_t *n, char *line) {
     }
 }
 
-size_t parse_command(char **argv[], size_t *n, char *line) {
+size_t parse_raw_command(char ***argv, size_t *n, char *line) {
     if (*argv == NULL) {
         *n = 10;
         *argv = malloc((*n) * sizeof(char *));
@@ -79,24 +79,50 @@ size_t parse_command(char **argv[], size_t *n, char *line) {
     }
 }
 
-char ***parse_line_into_commands();
+size_t parse_line_into_commands(char ****argvs, size_t **argcs, size_t *n, char *line) {
+    if (*argvs == NULL) {
+        *n = 10;
+        *argvs = malloc((*n) * sizeof(char **));
+    }
+    if (*argcs == NULL) {
+        *n = 10;
+        *argcs = malloc((*n) * sizeof(int));
+    }
+
+    char **raw_commands = NULL; // need cleaning up
+    size_t commands_n = 0;   // need cleaning up
+    size_t total_raw_commands = parse_line(&raw_commands, &commands_n, line);
+
+    if (total_raw_commands > *n) {
+        *n = total_raw_commands;
+        *argvs = malloc((*n) * sizeof(char **));
+        *argcs = malloc((*n) * sizeof(int));
+    }
+
+    char **argv = NULL;
+    for (size_t i = 0; i < total_raw_commands; i++) {
+        (*argcs)[i] = parse_raw_command(&argv, &commands_n, raw_commands[i]);
+    }
+
+}
+
 
 int main(void) {
     char *line = NULL;
     size_t size = 0;
     getline(&line, &size, stdin);
 
-    char **commands = NULL;
+    char **raw_commands = NULL;
     size_t n = 0;
-    parse_line(&commands, &n, line);
+    parse_line(&raw_commands, &n, line);
 
     int i = 0;
     while (1) {
-        if (commands[i] == NULL) {
+        if (raw_commands[i] == NULL) {
             break;
         }
         else {
-            printf("%s\n", commands[i]);
+            printf("%s\n", raw_commands[i]);
             i++;
         }
     }
@@ -105,8 +131,8 @@ int main(void) {
 
     char **argv = NULL;
     size_t size1 = 0;
-    size_t argc = parse_command(&argv, &size1, commands[0]);
-    printf("%d\n", argc);
+    size_t argc = parse_raw_command(&argv, &size1, raw_commands[1]);
+    printf("%zu\n", argc);
     i = 0;
     while (1) {
         if (argv[i] == NULL) {
@@ -117,7 +143,6 @@ int main(void) {
             i++;
         }
     }
-
 
     return 0;
 }
