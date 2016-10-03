@@ -28,6 +28,8 @@ typedef struct Job {
 
 void put_job_in_fg(Job *job, int cont);
 
+void put_job_in_bg(Job *job, int cont);
+
 Process *new_process() {
     Process *process = malloc(sizeof(process));
     return process;
@@ -206,7 +208,12 @@ void launch_job(Job *job, int bg) {
             }
             in_file = data_pipe[0];
 
-            put_job_in_fg(job, 0);
+            if (bg) {
+                put_job_in_bg(job, 0);
+            }
+            else {
+                put_job_in_fg(job, 0);
+            }
         }
     }
 }
@@ -234,6 +241,13 @@ void put_job_in_fg(Job *job, int cont) {
 //    tcsetattr(STDIN_FILENO, TCSADRAIN, &shell_tmodes);
 }
 
+void put_job_in_bg(Job *job, int cont) {
+    /* Send the job a continue signal, if necessary.  */
+    if (cont)
+        if (kill(-job->gid, SIGCONT) < 0)
+            perror("kill (SIGCONT)");
+}
+
 int has_bg_sign(Job *job) {
     Process *last_process = job->processes[job->total_processes - 1];
     if (strcmp(last_process->argv[last_process->argc - 1], "&") == 0) {
@@ -248,8 +262,8 @@ int has_bg_sign(Job *job) {
 }
 
 int main(void) {
-    signal(SIGINT, SIG_IGN);
-    signal(SIGTTOU, SIG_IGN);
+    signal(SIGINT, SIG_IGN);    // ignore ^C
+    signal(SIGTTOU, SIG_IGN);   // prevent the shell from stopping itself
 
     shell_gid = getpid();
     setpgid(shell_gid, shell_gid);
