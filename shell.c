@@ -7,6 +7,10 @@
 #include <ctype.h>
 #include <wait.h>
 #include <errno.h>
+#include <termio.h>
+
+int shell_gid;
+struct termios shell_tmodes;
 
 typedef struct Process {
     size_t argc;
@@ -18,8 +22,11 @@ typedef struct Job {
     size_t total_processes;
     Process **processes;
     pid_t gid;
+    struct termios tmodes;
 } Job;
 
+
+void put_job_in_foreground(Job *job, int cont);
 
 Process *new_process() {
     Process *process = malloc(sizeof(process));
@@ -152,8 +159,12 @@ void exec(Process *process, pid_t gid, int in_file, int out_file) {
     }
 
     if (execvp(process->argv[0], process->argv) == -1) {
-        int errsv = errno;
-        fprintf(stderr, "cannot execute %s: error %d\n", process->argv[0], errsv);
+        if (errno == ENOENT) {
+            fprintf(stderr, "%s: command not found\n", process->argv[0]);
+        }
+        else {
+            perror(process->argv[0]);
+        }
         exit(-1);
     }
 }
@@ -173,7 +184,7 @@ void launch_job(Job *job, int fg) {
 
         pid_t pid = fork();
         if (pid < 0) {
-            fprintf(stderr, "fork failed");
+            perror("fork");
             return;
         }
         else if (pid == 0) {    // child
@@ -185,20 +196,54 @@ void launch_job(Job *job, int fg) {
                 job->gid = pid;
             }
             setpgid(pid, job->gid);
+
+            // close pipes in parent
+            if (in_file != STDIN_FILENO) {
+                close(in_file);
+            }
+            if (out_file != STDOUT_FILENO) {
+                close(out_file);
+            }
+            in_file = data_pipe[0];
+
+            put_job_in_foreground(job, 0);
         }
-        if (in_file != STDIN_FILENO) {
-            close(in_file);
-        }
-        if (out_file != STDOUT_FILENO) {
-            close(out_file);
-        }
-        in_file = data_pipe[0];
     }
-    waitpid(job->gid, NULL, NULL);
 }
+
+void put_job_in_foreground(Job *job, int cont) {
+    /* Put the job into the foreground.  */
+    tcsetpgrp(STDIN_FILENO, job->gid);
+
+    /* Send the job a continue signal, if necessary.  */
+    if (cont) {
+        tcsetattr(STDIN_FILENO, TCSADRAIN, &job->tmodes);
+        if (kill(-job->gid, SIGCONT) < 0)
+            perror("kill (SIGCONT)");
+    }
+
+    /* Wait for it to report.  */
+//    wait_for_job(job);
+    waitpid(-job->gid, NULL, WUNTRACED);
+
+    /* Put the shell back in the foreground.  */
+    tcsetpgrp(STDIN_FILENO, shell_gid);
+
+    // store the job's tmodes
+    tcgetattr(STDIN_FILENO, &job->tmodes);
+    /* Restore the shell’s terminal modes.  */
+    tcsetattr(STDIN_FILENO, TCSADRAIN, &shell_tmodes);
+}
+
 
 int main(void) {
     signal(SIGINT, SIG_IGN);
+    signal(SIGTTOU, SIG_IGN);
+
+    shell_gid = getpid();
+    setpgid(shell_gid, shell_gid);
+    tcsetpgrp(STDIN_FILENO, shell_gid);
+    tcgetattr(STDIN_FILENO, &shell_tmodes);
 
     char cwd[4096];
 
@@ -225,7 +270,7 @@ int main(void) {
             }
         }
         if (bad_line) {
-            printf("bad input\n");
+            fprintf(stderr, "bad input\n");
             continue;
         }
 
@@ -234,8 +279,7 @@ int main(void) {
         }
         else if (strcmp(job->processes[0]->argv[0], "cd") == 0) {
             if (chdir(job->processes[0]->argv[1]) != 0) {
-                int errsv = errno;
-                fprintf(stderr, "cd: %s: Failed with error %d\n", job->processes[0]->argv[1], errsv);
+                perror("cd");
             };
         }
         else {
