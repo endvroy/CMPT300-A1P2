@@ -10,7 +10,7 @@
 #include <termio.h>
 
 int shell_gid;
-struct termios shell_tmodes;
+//struct termios shell_tmodes;
 
 typedef struct Process {
     size_t argc;
@@ -22,11 +22,11 @@ typedef struct Job {
     size_t total_processes;
     Process **processes;
     pid_t gid;
-    struct termios tmodes;
+//    struct termios tmodes;
 } Job;
 
 
-void put_job_in_foreground(Job *job, int cont);
+void put_job_in_fg(Job *job, int cont);
 
 Process *new_process() {
     Process *process = malloc(sizeof(process));
@@ -169,7 +169,7 @@ void exec(Process *process, pid_t gid, int in_file, int out_file) {
     }
 }
 
-void launch_job(Job *job, int fg) {
+void launch_job(Job *job, int bg) {
     int data_pipe[2];
     int in_file = STDIN_FILENO;
     int out_file;
@@ -206,35 +206,46 @@ void launch_job(Job *job, int fg) {
             }
             in_file = data_pipe[0];
 
-            put_job_in_foreground(job, 0);
+            put_job_in_fg(job, 0);
         }
     }
 }
 
-void put_job_in_foreground(Job *job, int cont) {
-    /* Put the job into the foreground.  */
+void put_job_in_fg(Job *job, int cont) {
+    // put job in fg
     tcsetpgrp(STDIN_FILENO, job->gid);
 
     /* Send the job a continue signal, if necessary.  */
-    if (cont) {
-        tcsetattr(STDIN_FILENO, TCSADRAIN, &job->tmodes);
-        if (kill(-job->gid, SIGCONT) < 0)
-            perror("kill (SIGCONT)");
-    }
+//    if (cont) {
+//        tcsetattr(STDIN_FILENO, TCSADRAIN, &job->tmodes);
+//        if (kill(-job->gid, SIGCONT) < 0)
+//            perror("kill (SIGCONT)");
+//    }
 
-    /* Wait for it to report.  */
 //    wait_for_job(job);
     waitpid(-job->gid, NULL, WUNTRACED);
 
-    /* Put the shell back in the foreground.  */
+    // Put the shell back in fg
     tcsetpgrp(STDIN_FILENO, shell_gid);
 
-    // store the job's tmodes
-    tcgetattr(STDIN_FILENO, &job->tmodes);
-    /* Restore the shell’s terminal modes.  */
-    tcsetattr(STDIN_FILENO, TCSADRAIN, &shell_tmodes);
+//    // store the job's tmodes
+//    tcgetattr(STDIN_FILENO, &job->tmodes);
+//    // Restore the shell’s tmodes
+//    tcsetattr(STDIN_FILENO, TCSADRAIN, &shell_tmodes);
 }
 
+int has_bg_sign(Job *job) {
+    Process *last_process = job->processes[job->total_processes - 1];
+    if (strcmp(last_process->argv[last_process->argc - 1], "&") == 0) {
+        last_process->argv[last_process->argc - 1] = NULL;
+        free(last_process->argv[last_process->argc]);
+        last_process->argc--;
+        return 1;
+    }
+    else {
+        return 0;
+    }
+}
 
 int main(void) {
     signal(SIGINT, SIG_IGN);
@@ -243,7 +254,7 @@ int main(void) {
     shell_gid = getpid();
     setpgid(shell_gid, shell_gid);
     tcsetpgrp(STDIN_FILENO, shell_gid);
-    tcgetattr(STDIN_FILENO, &shell_tmodes);
+//    tcgetattr(STDIN_FILENO, &shell_tmodes);
 
     char cwd[4096];
 
@@ -283,17 +294,25 @@ int main(void) {
             };
         }
         else {
-            launch_job(job, 0);
-        }
-//        // for test purposes
-//        for (size_t i = 0; i < job->total_processes; i++) {
-//            printf("command %zu:\n---------------\n", i);
-//            for (size_t j = 0; j < job->processes[i]->argc; j++) {
-//                printf("arg %zu: %s\n", j, job->processes[i]->argv[j]);
-//            }
-//            putchar('\n');
-//        }
 
+            int bg = has_bg_sign(job);
+            launch_job(job, bg);
+
+//            // for test purposes
+//            if (bg) {
+//                printf("background job\n");
+//            }
+//            else {
+//                printf("foreground job\n");
+//            }
+//            for (size_t i = 0; i < job->total_processes; i++) {
+//                printf("command %zu:\n---------------\n", i);
+//                for (size_t j = 0; j < job->processes[i]->argc; j++) {
+//                    printf("arg %zu: %s\n", j, job->processes[i]->argv[j]);
+//                }
+//                putchar('\n');
+//            }
+        }
     }
 
     // end of main loop
