@@ -1,44 +1,28 @@
 #define _GNU_SOURCE
 
-#include <unistd.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <ctype.h>
-#include <wait.h>
-#include <errno.h>
-#include <termio.h>
+#include "shell.h"
+#include <deque>
+#include <termios.h>
 
+using namespace std;
+
+typedef deque<Job *> JobList;
+
+// global variables
 int shell_gid;
+JobList bg_jobs;
+size_t bg_num = 1;
 //struct termios shell_tmodes;
 
-typedef struct Process {
-    size_t argc;
-    char **argv;
-    pid_t pid;
-} Process;
-
-typedef struct Job {
-    size_t total_processes;
-    Process **processes;
-    pid_t gid;
-//    struct termios tmodes;
-} Job;
-
-
-void put_job_in_fg(Job *job, int cont);
-
-void put_job_in_bg(Job *job, int cont);
-
 Process *new_process() {
-    Process *process = malloc(sizeof(process));
+    Process *process = (Process *) malloc(sizeof(process));
     return process;
 }
 
 Job *new_job(size_t total_processes) {
-    Job *job = malloc(sizeof(Job));
+    Job *job = (Job *) malloc(sizeof(Job));
     job->total_processes = total_processes;
-    job->processes = malloc(total_processes * sizeof(Process *));
+    job->processes = (Process **) malloc(total_processes * sizeof(Process *));
     job->gid = 0;
     return job;
 }
@@ -46,7 +30,7 @@ Job *new_job(size_t total_processes) {
 size_t _parse_line(char ***commands, size_t *n, char *line) {
     if (*commands == NULL) {
         *n = 10;
-        *commands = malloc((*n) * sizeof(char *));
+        *commands = (char **) malloc((*n) * sizeof(char *));
     }
 
     char *remaining = line;
@@ -57,7 +41,7 @@ size_t _parse_line(char ***commands, size_t *n, char *line) {
         if (remaining == NULL) {    // end of line
             if (i >= *n) {  // not enough size
                 *n = i + 2;
-                *commands = realloc(*commands, (*n) * sizeof(char *));
+                *commands = (char **) realloc(*commands, (*n) * sizeof(char *));
             }
             (*commands)[i] = command;
             (*commands)[i + 1] = NULL; // append a NULL ptr
@@ -66,7 +50,7 @@ size_t _parse_line(char ***commands, size_t *n, char *line) {
         else {
             if (i >= *n) {  // not enough size
                 *n = 2 * (*n);
-                *commands = realloc(*commands, (*n) * sizeof(char *));
+                *commands = (char **) realloc(*commands, (*n) * sizeof(char *));
             }
             (*commands)[i] = command;
             i++;
@@ -77,20 +61,22 @@ size_t _parse_line(char ***commands, size_t *n, char *line) {
 void _parse_raw_command(Process *p, char *raw_command) {
     size_t n = 10;
     if (p->argv == NULL) {
-        p->argv = malloc(n * sizeof(char *));
+        p->argv = (char **) malloc(n * sizeof(char *));
     }
 
     char *remaining = raw_command;
-    char *arg;
+    char *orig_arg;
     size_t i = 0;
     while (1) {
-        arg = strsep(&remaining, " \n");
+        orig_arg = strsep(&remaining, " \n");
+        char *arg = (char *) malloc(strlen(orig_arg) * sizeof(char));
+        strcpy(arg, orig_arg);
 
         if (remaining == NULL) {    // end of raw_command
             if (*arg == '\0' || isspace(*arg)) {
                 if (i >= n) {  // not enough size
                     n = i + 1;
-                    p->argv = realloc(p->argv, n * sizeof(char *));
+                    p->argv = (char **) realloc(p->argv, n * sizeof(char *));
                 }
                 p->argv[i + 1] = NULL; // append a NULL ptr
                 p->argc = i;
@@ -98,7 +84,7 @@ void _parse_raw_command(Process *p, char *raw_command) {
             }
             if (i >= n) {  // not enough size
                 n = i + 2;
-                p->argv = realloc(p->argv, n * sizeof(char *));
+                p->argv = (char **) realloc(p->argv, n * sizeof(char *));
             }
             p->argv[i] = arg;
             p->argv[i + 1] = NULL; // append a NULL ptr
@@ -112,7 +98,7 @@ void _parse_raw_command(Process *p, char *raw_command) {
             else {
                 if (i >= n) {  // not enough size
                     n = 2 * n;
-                    p->argv = realloc(p->argv, n * sizeof(char *));
+                    p->argv = (char **) realloc(p->argv, n * sizeof(char *));
                 }
                 p->argv[i] = arg;
                 i++;
@@ -208,44 +194,57 @@ void launch_job(Job *job, int bg) {
             }
             in_file = data_pipe[0];
 
-            if (bg) {
-                put_job_in_bg(job, 0);
-            }
-            else {
-                put_job_in_fg(job, 0);
-            }
+
         }
     }
+    if (bg) {
+        put_job_in_bg(job, 0);
+    }
+    else {
+        put_job_in_fg(job, 0);
+    }
+}
+
+void assign_bg_num(Job *job) {
+    job->bg_num = bg_num;
+    bg_num++;
+}
+
+void print_bg_job(Job *job, char *status) {
+    printf("[%zu] %s %s\n", job->bg_num, status, job->processes[0]->argv[0]);
 }
 
 void put_job_in_fg(Job *job, int cont) {
     // put job in fg
     tcsetpgrp(STDIN_FILENO, job->gid);
 
-    /* Send the job a continue signal, if necessary.  */
-//    if (cont) {
-//        tcsetattr(STDIN_FILENO, TCSADRAIN, &job->tmodes);
-//        if (kill(-job->gid, SIGCONT) < 0)
-//            perror("kill (SIGCONT)");
-//    }
+    if (cont) {
+        if (kill(-job->gid, SIGCONT) < 0)
+            perror("kill (SIGCONT)");
+    }
 
-//    wait_for_job(job);
-    waitpid(-job->gid, NULL, WUNTRACED);
-
+    int status;
+    waitpid(-job->gid, &status, WUNTRACED);
+    if (WIFSTOPPED(status)) {
+        assign_bg_num(job);
+        bg_jobs.push_back(job);
+        print_bg_job(job, "Stopped");
+    }
     // Put the shell back in fg
     tcsetpgrp(STDIN_FILENO, shell_gid);
 
-//    // store the job's tmodes
-//    tcgetattr(STDIN_FILENO, &job->tmodes);
-//    // Restore the shell’s tmodes
-//    tcsetattr(STDIN_FILENO, TCSADRAIN, &shell_tmodes);
 }
 
 void put_job_in_bg(Job *job, int cont) {
-    /* Send the job a continue signal, if necessary.  */
-    if (cont)
-        if (kill(-job->gid, SIGCONT) < 0)
+    assign_bg_num(job);
+    bg_jobs.push_back(job);
+
+    if (cont) {
+        if (kill(-job->gid, SIGCONT) < 0) {
             perror("kill (SIGCONT)");
+        }
+    }
+    print_bg_job(job, "Running");
 }
 
 int has_bg_sign(Job *job) {
@@ -307,8 +306,12 @@ int main(void) {
                 perror("cd");
             };
         }
+        else if (strcmp(job->processes[0]->argv[0], "jobs") == 0) {
+            for (auto job1 : bg_jobs) {
+                print_bg_job(job1, "unimplemented");
+            }
+        }
         else {
-
             int bg = has_bg_sign(job);
             launch_job(job, bg);
 
