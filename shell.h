@@ -52,8 +52,10 @@ Job *pop_bg_job_with_num(size_t bg_n);
 
 void assign_bg_num(Job *job);
 
-void print_bg_job(Job *job, char *status);
+void print_bg_job(Job *job, char status);
 
 void delete_job(Job *job);
+
+void mark_job_as_running(Job *job);
 
 #endif

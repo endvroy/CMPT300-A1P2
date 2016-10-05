@@ -194,6 +194,7 @@ void launch_job(Job *job, int bg) {
             in_file = data_pipe[0];
         }
     }
+    mark_job_as_running(job);
     if (bg) {
         put_job_in_bg(job, 0);
     }
@@ -273,6 +274,7 @@ void wait_for_job(Job *job) {
                 }
             }
             char job_status = get_job_status(job);
+            printf("job status: %c\n", job_status);
             if (job_status == 's') {
                 assign_bg_num(job);
                 bg_jobs.push_back(job);
@@ -287,7 +289,7 @@ void wait_for_job(Job *job) {
 }
 
 void put_job_in_fg(Job *job, int cont) {
-    mark_job_as_running(job);
+//    mark_job_as_running(job);
     // put job in fg
     tcsetpgrp(STDIN_FILENO, job->gid);
 
@@ -304,7 +306,7 @@ void put_job_in_fg(Job *job, int cont) {
 }
 
 void put_job_in_bg(Job *job, int cont) {
-    mark_job_as_running(job);
+//    mark_job_as_running(job);
     assign_bg_num(job);
     bg_jobs.push_back(job);
 
@@ -341,7 +343,56 @@ Job *pop_bg_job_with_num(size_t bg_n) {
     return NULL;
 }
 
-void clean_bg_jobs();
+void clean_bg_jobs() {
+    auto it_job = bg_jobs.begin();
+    while (it_job != bg_jobs.end()) {
+        Job *job = *it_job;
+        char job_status = get_job_status(job);
+        if (job_status == 't') {
+            print_bg_job(job, job_status);
+            it_job = bg_jobs.erase(it_job);
+//            delete_job(job);  // todo: uncomment
+        }
+        else {
+            it_job++;
+        }
+    }
+}
+
+void refresh_all_bg_process_status() {
+    pid_t pid;
+    int status;
+    for (auto it_job = bg_jobs.begin(); it_job != bg_jobs.end(); it_job++) {
+        Job *job = *it_job;
+        while (1) {
+            pid = waitpid(-job->gid, &status, WNOHANG);
+            int errsv = errno;
+            printf("pid = %d\n", pid);
+            if (errsv == ECHILD) {
+                printf("no child\n");
+            }
+            if (pid == 0 || errsv == ECHILD) {
+                break;
+            }
+            else if (pid < 0) {
+                perror("waitpid");
+                break;
+            }
+            else {
+                for (size_t i = 0; i < job->total_processes; i++) {
+                    if (job->processes[i]->pid == pid) {
+                        if (WIFSTOPPED(status)) {
+                            job->processes[i]->status = 's';
+                        }
+                        else {
+                            job->processes[i]->status = 't';
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
 
 int main(void) {
     signal(SIGINT, SIG_IGN);    // ignore ^C
@@ -363,6 +414,7 @@ int main(void) {
             fprintf(stderr, "path length exceeds limit");
             exit(-1);
         }
+
 
         printf("mysh:%s> ", cwd);
         getline(&line, &line_size, stdin);
@@ -421,23 +473,10 @@ int main(void) {
         else {
             int bg = has_bg_sign(job);
             launch_job(job, bg);
-
-//            // for test purposes
-//            if (bg) {
-//                printf("background job\n");
-//            }
-//            else {
-//                printf("foreground job\n");
-//            }
-//            for (size_t i = 0; i < job->total_processes; i++) {
-//                printf("command %zu:\n---------------\n", i);
-//                for (size_t j = 0; j < job->processes[i]->argc; j++) {
-//                    printf("arg %zu: %s\n", j, job->processes[i]->argv[j]);
-//                }
-//                putchar('\n');
-//            }
         }
-//        clean_bg_jobs();
+
+        refresh_all_bg_process_status();
+        clean_bg_jobs();
     }
 
 // end of main loop
