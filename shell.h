@@ -24,38 +24,52 @@ typedef struct Job {
 //    struct termios tmodes;
 } Job;
 
-void put_job_in_fg(Job *job, int cont);
-
-void put_job_in_bg(Job *job, int cont);
-
+// constructors
 Process *new_process();
 
 Job *new_job(size_t total_processes);
 
+// functions to parse input
 size_t _parse_line(char ***commands, size_t *n, char *line);
 
 void _parse_raw_command(Process *p, char *raw_command);
 
 Job *parse_line_into_job(char *line);
 
+int has_bg_sign(Job *job);
+
+// functions to launch jobs
 void exec(Process *process, pid_t gid, int in_file, int out_file);
 
 void launch_job(Job *job, int bg);
 
+// functions to deal with fg jobs
 void put_job_in_fg(Job *job, int cont);
+
+void wait_for_fg_job(Job *job);
+
+// functions to deal with bg jobs
+void _assign_bg_num(Job *job);
 
 void put_job_in_bg(Job *job, int cont);
 
-int has_bg_sign(Job *job);
-
-Job *pop_bg_job_with_num(size_t bg_n);
-
-void assign_bg_num(Job *job);
-
 void print_bg_job(Job *job, char status);
 
-void delete_job(Job *job);
+Job *_pop_bg_job_with_num(size_t bg_n);
 
+// function to get job status
+char get_job_status(Job *job);
+
+// functions to change job status
 void mark_job_as_running(Job *job);
+
+void resume_job_running_status(Job *job);
+
+// functions to periodically update and clean jobs
+void refresh_all_bg_process_status();
+
+void clean_bg_jobs();
+
+void free_job(Job *job);
 
 #endif
