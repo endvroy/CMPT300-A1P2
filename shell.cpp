@@ -367,15 +367,17 @@ void refresh_all_bg_process_status() {
         while (1) {
             pid = waitpid(-job->gid, &status, WNOHANG);
             int errsv = errno;
-            printf("pid = %d\n", pid);
-            if (errsv == ECHILD) {
-                printf("no child\n");
-            }
-            if (pid == 0 || errsv == ECHILD) {
+//            printf("pid = %d\n", pid);
+//            if (errsv == ECHILD) {
+//                printf("no child\n");
+//            }
+            if (pid == 0) {
                 break;
             }
             else if (pid < 0) {
-                perror("waitpid");
+                if (errsv != ECHILD) {
+                    perror("waitpid");
+                }
                 break;
             }
             else {
@@ -415,6 +417,8 @@ int main(void) {
             exit(-1);
         }
 
+        refresh_all_bg_process_status();
+        clean_bg_jobs();
 
         printf("mysh:%s> ", cwd);
         getline(&line, &line_size, stdin);
@@ -475,8 +479,7 @@ int main(void) {
             launch_job(job, bg);
         }
 
-        refresh_all_bg_process_status();
-        clean_bg_jobs();
+
     }
 
 // end of main loop
