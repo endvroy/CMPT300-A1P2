@@ -8,7 +8,7 @@ using namespace std;
 
 typedef deque<Job *> JobList;
 
-// global variables
+// shell's internal variables
 int shell_gid;
 JobList bg_jobs;
 size_t bg_num = 1;
@@ -153,7 +153,6 @@ void exec(Process *process, pid_t gid, int in_file, int out_file) {
         else {
             perror(process->argv[0]);
         }
-        exit(-1);
     }
 }
 
@@ -193,8 +192,6 @@ void launch_job(Job *job, int bg) {
                 close(out_file);
             }
             in_file = data_pipe[0];
-
-
         }
     }
     if (bg) {
@@ -210,11 +207,87 @@ void assign_bg_num(Job *job) {
     bg_num++;
 }
 
-void print_bg_job(Job *job, char *status) {
-    printf("[%zu] %s %s\n", job->bg_num, status, job->processes[0]->argv[0]);
+void print_bg_job(Job *job, char status) {
+    printf("[%zu] ", job->bg_num);
+    if (status == 'r') {
+        printf("%s ", "Running");
+    }
+    if (status == 't') {
+        printf("%s ", "Done");
+    }
+    if (status == 's') {
+        printf("%s ", "Stopped");
+    }
+
+    for (size_t i = 0; i < job->total_processes; i++) {
+        for (size_t j = 0; j < job->processes[i]->argc; j++) {
+            printf("%s ", job->processes[i]->argv[j]);
+        }
+        if (i + 1 < job->total_processes) {
+            printf("| ");
+        }
+    }
+    putchar('\n');
+}
+
+char get_job_status(Job *job) {
+    for (size_t i = 0; i < job->total_processes; i++) {
+        if (job->processes[i]->status == 's') {
+            return 's';
+        }
+        if (job->processes[i]->status == 'r') {   // not stopped but has one still running
+            return 'r';
+        }
+    }
+    return 't';
+}
+
+void mark_job_as_running(Job *job) {
+    for (size_t i = 0; i < job->total_processes; i++) {
+        job->processes[i]->status = 'r';
+    }
+}
+
+void wait_for_job(Job *job) {
+    int status;
+    pid_t pid;
+
+    while (1) {
+        pid = waitpid(-job->gid, &status, WUNTRACED);
+        if (pid == 0 || errno == ECHILD) {
+            break;
+        }
+        else if (pid < 0) {
+            perror("waitpid");
+            break;
+        }
+        else {
+            for (size_t i = 0; i < job->total_processes; i++) {
+                if (job->processes[i]->pid == pid) {
+                    if (WIFSTOPPED(status)) {
+                        job->processes[i]->status = 's';
+                    }
+                    else {
+                        job->processes[i]->status = 't';
+                    }
+                }
+            }
+            char job_status = get_job_status(job);
+            if (job_status == 's') {
+                assign_bg_num(job);
+                bg_jobs.push_back(job);
+                print_bg_job(job, 's');
+                return;
+            }
+            else if (job_status == 't') {
+                return;
+            }
+        }
+    };
 }
 
 void put_job_in_fg(Job *job, int cont) {
+    mark_job_as_running(job);
     // put job in fg
     tcsetpgrp(STDIN_FILENO, job->gid);
 
@@ -223,19 +296,15 @@ void put_job_in_fg(Job *job, int cont) {
             perror("kill (SIGCONT)");
     }
 
-    int status;
-    waitpid(-job->gid, &status, WUNTRACED);
-    if (WIFSTOPPED(status)) {
-        assign_bg_num(job);
-        bg_jobs.push_back(job);
-        print_bg_job(job, "Stopped");
-    }
+    wait_for_job(job);
+
     // Put the shell back in fg
     tcsetpgrp(STDIN_FILENO, shell_gid);
 
 }
 
 void put_job_in_bg(Job *job, int cont) {
+    mark_job_as_running(job);
     assign_bg_num(job);
     bg_jobs.push_back(job);
 
@@ -244,7 +313,8 @@ void put_job_in_bg(Job *job, int cont) {
             perror("kill (SIGCONT)");
         }
     }
-    print_bg_job(job, "Running");
+    char job_status = get_job_status(job);
+    print_bg_job(job, job_status);
 }
 
 int has_bg_sign(Job *job) {
@@ -259,6 +329,19 @@ int has_bg_sign(Job *job) {
         return 0;
     }
 }
+
+Job *pop_bg_job_with_num(size_t bg_n) {
+    for (auto it_job = bg_jobs.begin(); it_job != bg_jobs.end(); it_job++) {
+        if ((*it_job)->bg_num == bg_n) {
+            Job *job = *it_job;
+            bg_jobs.erase(it_job);
+            return job;
+        }
+    }
+    return NULL;
+}
+
+void clean_bg_jobs();
 
 int main(void) {
     signal(SIGINT, SIG_IGN);    // ignore ^C
@@ -308,7 +391,31 @@ int main(void) {
         }
         else if (strcmp(job->processes[0]->argv[0], "jobs") == 0) {
             for (auto job1 : bg_jobs) {
-                print_bg_job(job1, "unimplemented");
+                char job_status = get_job_status(job1);
+                print_bg_job(job1, job_status);
+            }
+        }
+        else if (strcmp(job->processes[0]->argv[0], "fg") == 0) {
+            size_t bg_n = (size_t) atoi(job->processes[0]->argv[1] + 1);
+            Job *job1 = pop_bg_job_with_num(bg_n);
+            if (job1 == NULL) {
+                fprintf(stderr, "fg: %zu: no such job", bg_n);
+                continue;
+            }
+            else {
+                put_job_in_fg(job1, 1);
+            }
+        }
+
+        else if (strcmp(job->processes[0]->argv[0], "bg") == 0) {
+            size_t bg_n = (size_t) atoi(job->processes[0]->argv[1] + 1);
+            Job *job1 = pop_bg_job_with_num(bg_n);
+            if (job1 == NULL) {
+                fprintf(stderr, "bg: %zu: no such job", bg_n);
+                continue;
+            }
+            else {
+                put_job_in_bg(job1, 1);
             }
         }
         else {
@@ -330,10 +437,11 @@ int main(void) {
 //                putchar('\n');
 //            }
         }
+//        clean_bg_jobs();
     }
 
-    // end of main loop
-    // cleaning up
+// end of main loop
+// cleaning up
     free(line);
     return 0;
 

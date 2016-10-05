@@ -13,6 +13,7 @@ typedef struct Process {
     size_t argc;
     char **argv;
     pid_t pid;
+    char status;
 } Process;
 
 typedef struct Job {
@@ -46,5 +47,13 @@ void put_job_in_fg(Job *job, int cont);
 void put_job_in_bg(Job *job, int cont);
 
 int has_bg_sign(Job *job);
+
+Job *pop_bg_job_with_num(size_t bg_n);
+
+void assign_bg_num(Job *job);
+
+void print_bg_job(Job *job, char *status);
+
+void delete_job(Job *job);
 
 #endif
