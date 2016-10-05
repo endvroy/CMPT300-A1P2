@@ -153,6 +153,7 @@ void exec(Process *process, pid_t gid, int in_file, int out_file) {
         else {
             perror(process->argv[0]);
         }
+        exit(-1);
     }
 }
 
@@ -285,7 +286,7 @@ void wait_for_job(Job *job) {
                 }
             }
             char job_status = get_job_status(job);
-            printf("job status: %c\n", job_status);
+//            printf("job status: %c\n", job_status);
             if (job_status == 's') {
                 assign_bg_num(job);
                 bg_jobs.push_back(job);
