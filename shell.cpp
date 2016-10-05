@@ -249,17 +249,28 @@ void mark_job_as_running(Job *job) {
     }
 }
 
+void resume_job_running_status(Job *job) {
+    for (size_t i = 0; i < job->total_processes; i++) {
+        if (job->processes[i]->status == 's') {
+            job->processes[i]->status = 'r';
+        }
+    }
+}
+
 void wait_for_job(Job *job) {
     int status;
     pid_t pid;
 
     while (1) {
         pid = waitpid(-job->gid, &status, WUNTRACED);
-        if (pid == 0 || errno == ECHILD) {
+        int errsv = errno;
+        if (pid == 0) {
             break;
         }
         else if (pid < 0) {
-            perror("waitpid");
+            if (errsv != ECHILD) {
+                perror("waitpid");
+            }
             break;
         }
         else {
@@ -291,6 +302,7 @@ void wait_for_job(Job *job) {
 void put_job_in_fg(Job *job, int cont) {
 //    mark_job_as_running(job);
     // put job in fg
+    resume_job_running_status(job);
     tcsetpgrp(STDIN_FILENO, job->gid);
 
     if (cont) {
@@ -307,6 +319,7 @@ void put_job_in_fg(Job *job, int cont) {
 
 void put_job_in_bg(Job *job, int cont) {
 //    mark_job_as_running(job);
+    resume_job_running_status(job);
     assign_bg_num(job);
     bg_jobs.push_back(job);
 
