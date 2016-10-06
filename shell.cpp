@@ -149,6 +149,7 @@ int has_bg_sign(Job *job) {
 // functions to launch jobs
 void exec(Process *process, pid_t gid, int in_file, int out_file) {
     signal(SIGINT, SIG_DFL);
+    signal(SIGTSTP, SIG_DFL);
 
     pid_t pid = getpid();
     if (gid == 0) {
@@ -445,6 +446,7 @@ void free_job(Job *job) {
 
 int main(void) {
     signal(SIGINT, SIG_IGN);    // ignore ^C
+    signal(SIGTSTP, SIG_IGN);
     signal(SIGTTOU, SIG_IGN);   // prevent the shell from stopping itself
 
     shell_gid = getpid();
