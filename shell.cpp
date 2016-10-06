@@ -2,7 +2,6 @@
 
 #include "shell.h"
 #include <deque>
-#include <termios.h>
 
 using namespace std;
 
@@ -12,7 +11,6 @@ typedef deque<Job *> JobList;
 int shell_gid;
 JobList bg_jobs;
 size_t bg_num = 1;
-//struct termios shell_tmodes;
 
 // constructors
 Process *new_process() {
@@ -452,7 +450,6 @@ int main(void) {
     shell_gid = getpid();
     setpgid(shell_gid, shell_gid);
     tcsetpgrp(STDIN_FILENO, shell_gid);
-//    tcgetattr(STDIN_FILENO, &shell_tmodes);
 
     char cwd[4096];
 

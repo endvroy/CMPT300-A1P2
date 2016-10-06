@@ -21,7 +21,6 @@ typedef struct Job {
     Process **processes;
     pid_t gid;
     size_t bg_num;
-//    struct termios tmodes;
 } Job;
 
 // constructors
