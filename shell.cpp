@@ -25,6 +25,7 @@ Job *new_job(size_t total_processes) {
     job->total_processes = total_processes;
     job->processes = (Process **) malloc(total_processes * sizeof(Process *));
     job->gid = 0;
+    job->bg_num = 0;
     return job;
 }
 
@@ -71,37 +72,44 @@ void _parse_raw_command(Process *p, char *raw_command) {
     size_t i = 0;
     while (1) {
         orig_arg = strsep(&remaining, " \n");
-        char *arg = (char *) malloc(strlen(orig_arg) * sizeof(char));
-        strcpy(arg, orig_arg);
+
 
         if (remaining == NULL) {    // end of raw_command
-            if (*arg == '\0' || isspace(*arg)) {
+            if (*orig_arg == '\0' || isspace(*orig_arg)) {
                 if (i >= n) {  // not enough size
                     n = i + 1;
+                    char *arg = (char *) malloc((strlen(orig_arg) + 1) * sizeof(char));
+                    strcpy(arg, orig_arg);
                     p->argv = (char **) realloc(p->argv, n * sizeof(char *));
                 }
-                p->argv[i + 1] = NULL; // append a NULL ptr
+                p->argv[i] = NULL; // append a NULL ptr
                 p->argc = i;
                 return;
             }
             if (i >= n) {  // not enough size
                 n = i + 2;
+                char *arg = (char *) malloc((strlen(orig_arg) + 1) * sizeof(char));
+                strcpy(arg, orig_arg);
                 p->argv = (char **) realloc(p->argv, n * sizeof(char *));
             }
-            p->argv[i] = arg;
-            p->argv[i + 1] = NULL; // append a NULL ptr
+            p->argv[i] = orig_arg;
+            p->argv[i] = NULL; // append a NULL ptr
             p->argc = i + 1;
             return;
         }
         else {
-            if (*arg == '\0' || isspace(*arg)) {
+            if (*orig_arg == '\0' || isspace(*orig_arg)) {
                 continue;
             }
             else {
                 if (i >= n) {  // not enough size
                     n = 2 * n;
+                    char *arg = (char *) malloc((strlen(orig_arg) + 1) * sizeof(char));
+                    strcpy(arg, orig_arg);
                     p->argv = (char **) realloc(p->argv, n * sizeof(char *));
                 }
+                char *arg = (char *) malloc((strlen(orig_arg) + 1) * sizeof(char));
+                strcpy(arg, orig_arg);
                 p->argv[i] = arg;
                 i++;
             }
@@ -275,6 +283,7 @@ void wait_for_fg_job(Job *job) {
                 return;
             }
             else if (job_status == 't') {
+                free_job(job);
                 return;
             }
         }
@@ -283,8 +292,13 @@ void wait_for_fg_job(Job *job) {
 
 // functions to deal with bg jobs
 void _assign_bg_num(Job *job) {
-    job->bg_num = bg_num;
-    bg_num++;
+    if (job->bg_num == 0) {
+        if (bg_jobs.empty()) {
+            bg_num = 1;
+        }
+        job->bg_num = bg_num;
+        bg_num++;
+    }
 }
 
 void put_job_in_bg(Job *job, int cont) {
@@ -410,7 +424,7 @@ void clean_bg_jobs() {
         if (job_status == 't') {
             print_bg_job(job, job_status);
             it_job = bg_jobs.erase(it_job);
-//            delete_job(job);  // todo: uncomment
+            free_job(job);
         }
         else {
             it_job++;
@@ -422,7 +436,7 @@ void free_job(Job *job) {
     for (size_t i = 0; i < job->total_processes; i++) {
         Process *process = job->processes[i];
         for (size_t j = 0; j < process->argc; j++) {
-            free(process->argv[i]);
+            free(process->argv[j]);
         }
         free(process->argv);
     }
@@ -511,13 +525,13 @@ int main(void) {
             int bg = has_bg_sign(job);
             launch_job(job, bg);
         }
-
-
     }
 
 // end of main loop
 // cleaning up
     free(line);
+    for (auto job:bg_jobs) {
+        free_job(job);
+    }
     return 0;
-
 }
