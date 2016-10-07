@@ -336,6 +336,7 @@ void print_bg_job(Job *job, char status) {
             printf("| ");
         }
     }
+    putchar('&');
     putchar('\n');
 }
 
