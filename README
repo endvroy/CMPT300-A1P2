@@ -1,0 +1,15 @@
+The executable is called my_parse
+Compiling requires C++11 standard, POSIX.1-2008(for getline()) and 4.4BSD(for strsep()) or higher
+This project refers a lot to the material in the FAQ (https://www.gnu.org/software/libc/manual/html_node/Implementing-a-Shell.html#Implementing-a-Shell), mostly notably in:
+- The design of Process and Job structs
+- An optional 'continue' parameter in put_job_in_fg and put_job_in_bg
+- Setting up pipes properly in launch_job
+
+However, this project has a different design and takes a different approach in all other aspects, most notably in:
+- A clear distinction between the foreground job and background jobs. Only background jobs are tracked by a dedicated data structure and checked for status periodically. The approach in the original material, although possibly a bit more efficient, is a messy design.
+- The data structures. This project uses extendable arrays in Job, and uses a C++ deque to track all jobs
+- The design of job and process status. This project uses one character to indicate process status,'r' for running, 's' for stopped, and 't' for terminated. This project does not distinguish a process exiting normally or being killed by a interrupt. When a process ends its execution, it is 'terminated'.
+- A clearer job status. Job status are mutually exlclusive in this project, in contrast to the original material.
+- This project trims anything I think as unnecesary in the original material.
+
+The shell supports pipelines, job control and graceful error handling. Builtin commands will only work when they appear first. Type 'exit' to exit the shell. Ctrl+D will not work.
