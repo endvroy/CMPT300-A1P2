@@ -147,6 +147,7 @@ int has_bg_sign(Job *job) {
 // functions to launch jobs
 void exec(Process *process, pid_t gid, int in_file, int out_file) {
     signal(SIGINT, SIG_DFL);
+    signal(SIGQUIT, SIG_DFL);
     signal(SIGTSTP, SIG_DFL);
 
     pid_t pid = getpid();
@@ -444,7 +445,8 @@ void free_job(Job *job) {
 
 int main(void) {
     signal(SIGINT, SIG_IGN);    // ignore ^C
-    signal(SIGTSTP, SIG_IGN);
+    signal(SIGQUIT, SIG_IGN);   // ignore ^D
+    signal(SIGTSTP, SIG_IGN);   // prevent the shell from being stopped
     signal(SIGTTOU, SIG_IGN);   // prevent the shell from stopping itself
 
     shell_gid = getpid();
@@ -498,26 +500,52 @@ int main(void) {
             }
         }
         else if (strcmp(job->processes[0]->argv[0], "fg") == 0) {
-            size_t bg_n = (size_t) atoi(job->processes[0]->argv[1] + 1);
-            Job *job1 = _pop_bg_job_with_num(bg_n);
-            if (job1 == NULL) {
-                fprintf(stderr, "fg: %zu: no such job\n", bg_n);
-                continue;
+            if (job->processes[0]->argc == 1) {
+                if (bg_jobs.empty()) {
+                    fprintf(stderr, "fg: no back ground job\n");
+                    continue;
+                }
+                else {
+                    Job *job1 = bg_jobs.back();
+                    bg_jobs.pop_back();
+                    put_job_in_fg(job1, 1);
+                }
             }
             else {
-                put_job_in_fg(job1, 1);
+                size_t bg_n = (size_t) atoi(job->processes[0]->argv[1] + 1);
+                Job *job1 = _pop_bg_job_with_num(bg_n);
+                if (job1 == NULL) {
+                    fprintf(stderr, "fg: %zu: no such job\n", bg_n);
+                    continue;
+                }
+                else {
+                    put_job_in_fg(job1, 1);
+                }
             }
         }
 
         else if (strcmp(job->processes[0]->argv[0], "bg") == 0) {
-            size_t bg_n = (size_t) atoi(job->processes[0]->argv[1] + 1);
-            Job *job1 = _pop_bg_job_with_num(bg_n);
-            if (job1 == NULL) {
-                fprintf(stderr, "bg: %zu: no such job\n", bg_n);
-                continue;
+            if (job->processes[0]->argc == 1) {
+                if (bg_jobs.empty()) {
+                    fprintf(stderr, "bg: no back ground job\n");
+                    continue;
+                }
+                else {
+                    Job *job1 = bg_jobs.back();
+                    bg_jobs.pop_back();
+                    put_job_in_bg(job1, 1);
+                }
             }
             else {
-                put_job_in_bg(job1, 1);
+                size_t bg_n = (size_t) atoi(job->processes[0]->argv[1] + 1);
+                Job *job1 = _pop_bg_job_with_num(bg_n);
+                if (job1 == NULL) {
+                    fprintf(stderr, "bg: %zu: no such job\n", bg_n);
+                    continue;
+                }
+                else {
+                    put_job_in_bg(job1, 1);
+                }
             }
         }
         else {
