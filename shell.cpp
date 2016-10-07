@@ -69,7 +69,7 @@ void _parse_raw_command(Process *p, char *raw_command) {
     char *orig_arg;
     size_t i = 0;
     while (1) {
-        orig_arg = strsep(&remaining, " \n");
+        orig_arg = strsep(&remaining, " \n\t");
 
 
         if (remaining == NULL) {    // end of raw_command
@@ -317,15 +317,15 @@ void put_job_in_bg(Job *job, int cont) {
 }
 
 void print_bg_job(Job *job, char status) {
-    printf("[%zu] ", job->bg_num);
+    printf("[%zu]  ", job->bg_num);
     if (status == 'r') {
-        printf("%s ", "Running");
+        printf("%-20s ", "Running");
     }
     if (status == 't') {
-        printf("%s ", "Done");
+        printf("%-20s ", "Done");
     }
     if (status == 's') {
-        printf("%s ", "Stopped");
+        printf("%-20s ", "Stopped");
     }
 
     for (size_t i = 0; i < job->total_processes; i++) {
