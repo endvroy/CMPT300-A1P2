@@ -446,7 +446,7 @@ void free_job(Job *job) {
 
 int main(void) {
     signal(SIGINT, SIG_IGN);    // ignore ^C
-    signal(SIGQUIT, SIG_IGN);   // ignore ^D
+    signal(SIGQUIT, SIG_IGN);   // ignore ^\
     signal(SIGTSTP, SIG_IGN);   // prevent the shell from being stopped
     signal(SIGTTOU, SIG_IGN);   // prevent the shell from stopping itself
 
